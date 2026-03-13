@@ -3,6 +3,7 @@
 # https://www.youtube.com/watch?v=GI6FfwbZUo0
 
 library(tidyverse)
+library(car)
 theme_set(theme_bw())
 
 # Do groups differ in mean or rate?
@@ -159,3 +160,110 @@ t.test(x = change, mu = 0)
 # - Equal variance assumption - use bartlett.test() or leveneTest()
 # - Highly sensitive with many groups or large samples - statistical is different 
 # from practical significance
+
+## One-way ANOVA ----
+
+himym <- read_csv("himym_episodewise.csv") |> 
+  mutate(Season = factor(Season))
+
+himym |> 
+  ggplot(aes(x = Season, y = IMDB_Rating,
+             fill = Season, color = Season)) +
+  geom_boxplot(alpha = 0.5, outlier.shape = NA) +
+  geom_jitter(height = 0, width = 0.2)
+
+himym |> 
+  ggplot(aes(x = IMDB_Rating)) +
+  geom_density() +
+  geom_density(data = himym |> filter(Season == 2),
+               aes(x = IMDB_Rating), color = "green") +
+  geom_density(data = himym |> filter(Season == 9),
+               aes(x = IMDB_Rating), color = "red")
+
+himym_plot <- himym |> 
+  mutate(plot_group = case_when(
+    Season == 2 ~ "Season 2",
+    Season == 9 ~ "Season 9",
+    .default = "All Other Seasons"
+  ))
+
+himym_plot |> 
+  ggplot(aes(x = IMDB_Rating, fill = plot_group)) +
+  geom_histogram(binwidth = 0.2, color = "white") +
+  facet_wrap(~ plot_group, scales = "free_y", nrow = 3) +
+  theme(legend.position = "none")
+
+aov(IMDB_Rating ~ Season, data = himym)
+
+summary(aov(IMDB_Rating ~ Season, data = himym))
+
+TukeyHSD(aov(IMDB_Rating ~ Season, data = himym))
+
+# Find pairs of highest difference
+aov_model <- aov(IMDB_Rating ~ Season, data = himym)
+tukey_df <- as.data.frame(TukeyHSD(aov_model)$Season)
+tukey_df$comparison <- rownames(tukey_df)
+tukey_sorted <- tukey_df[order(tukey_df$`p adj`), ]
+
+tukey_sorted
+
+tukey_sorted |> 
+  ggplot(aes(x = reorder(comparison, `p adj`), y = `p adj`)) +
+  geom_point(color = "darkred", size = 2) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "gray50") +
+  coord_flip()
+
+# Bartlett test of homogeneity of variances
+bartlett.test(IMDB_Rating ~ Season, data = himym)
+bartlett.test(IMDB_Rating ~ Season, data = himym |> filter(Season != 9))
+
+# Levene test
+leveneTest(IMDB_Rating ~ Season, data = himym)
+
+himym |> 
+  summarise(variance = var(IMDB_Rating),
+            sd = sd(IMDB_Rating),
+            n = n(),
+            .by = Season)
+
+t.test(IMDB_Rating ~ Season, 
+       data = himym |> filter(Season %in% c(2, 9)), 
+       var.equal = FALSE)
+
+## Two-way ANOVA ----
+
+data("ToothGrowth")
+ToothGrowth$dose <- as.factor(ToothGrowth$dose)
+
+ToothGrowth |> 
+  count(supp, dose)
+
+# run two-way ANOVA with interaction
+model <- aov(len ~ supp * dose,
+             data = ToothGrowth)
+
+summary(model)
+
+ggplot(ToothGrowth,
+       aes(x = dose, y = len, color = supp, group = supp)) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun = mean, geom = "line")
+
+# Correlation ----
+
+# When to use
+# - You're exploring the strength and direction of the relationship
+# between two numeric variables
+
+# What it tells you 
+# - The correlation coefficient (range: -1 to +1) and p-value for testing if r != 0
+
+# Watch out for
+# - Outliers (can distort r)
+# - Non-linear relationships (low r, even if there's a pattern)
+# - Correlation != causation
+# - Use cor.test() for Pearson, Kendall, Spearman
+# - Use corr.test() from {psych} for multiple variables + CI
+
+# Visuals
+# - pairs(), GGally::ggpairs()
